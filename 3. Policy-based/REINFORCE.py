@@ -7,7 +7,7 @@ import torch.optim as optim
 from torch.distributions import Categorical
 from Environments.grid_world import GridWorld
 from torch.utils.tensorboard import SummaryWriter
-
+import time
 #Hyperparameters
 learning_rate = 0.0002
 gamma         = 0.98
@@ -28,17 +28,46 @@ class Policy(nn.Module):
       
     def put_data(self, item):
         self.data.append(item)
-        
+    
     def train_net(self):
         R = 0
         self.optimizer.zero_grad()
         for r, prob in self.data[::-1]:
             R = r + gamma * R
             loss = -torch.log(prob) * R
+            loss.backward(retain_graph=False)
+        self.data = []
+        self.optimizer.step()
+        return loss.item()
+    
+    def train_net3(self):
+        R = 0
+        for r, prob in self.data[::-1]:
+            self.optimizer.zero_grad()
+            R = r + gamma * R
+            loss = -torch.log(prob) * R
+            loss.backward(retain_graph=False)
+            self.optimizer.step()
+        self.data = []
+        return loss.item()
+    
+    def train_net2(self):
+        # G = r0 + yr1 + y^r2 + ..
+        # G0 = 0.99^0 * r0
+        # G1 = 0.99^1 * r1 + 0.99^0 * r0 
+        self.optimizer.zero_grad()
+        for T in range(len(self.data)):
+            G = 0
+            for i, (r, prob) in enumerate(self.data[T::]):
+                G += gamma ** i * r
+            prob = self.data[T][1]
+            loss = -torch.log(prob) * G
             loss.backward()
         self.optimizer.step()
         self.data = []
         return loss.item()
+            
+                
 
 def main():
     summary = SummaryWriter()
@@ -65,7 +94,7 @@ def main():
             score += r
             #env.render()
             
-        loss = pi.train_net()
+        loss = pi.train_net2()
         if n_epi%print_interval==0 and n_epi!=0:
             avg_score = score/print_interval
             summary.add_scalar('train/loss', loss, n_epi)
@@ -98,6 +127,7 @@ def eval():
             s_prime, r, done, info = env.step(a.item())
             s = s_prime
             score += r
+            time.sleep(0.2)
             env.render()
         if n_epi%print_interval==0 and n_epi!=0:
             avg_score = score/print_interval
@@ -107,5 +137,5 @@ def eval():
 
     
 if __name__ == '__main__':
-    #main()
+    main()
     eval()
